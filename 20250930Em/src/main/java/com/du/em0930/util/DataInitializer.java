@@ -10,7 +10,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-@Component
+//@Component
 @RequiredArgsConstructor
 public class DataInitializer implements ApplicationRunner {
     //샘플 데이터 입력 implements를 통해 자동 실행
