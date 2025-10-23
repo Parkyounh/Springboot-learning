@@ -58,4 +58,14 @@ project(':sub-module-2') {
     dependencies {
         implementation project(':common')
     }
-} 
+}
+project(':sub-module-3') {
+    dependencies {
+        implementation project(':common')
+    }
+}
+project(':sub-module-4') {
+    dependencies {
+        implementation project(':common')
+    }
+}

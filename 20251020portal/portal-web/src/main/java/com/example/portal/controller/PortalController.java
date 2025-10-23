@@ -35,4 +35,18 @@ public class PortalController {
         redirectView.setUrl("http://localhost:8082/module2/");
         return redirectView;
     }
+
+    @GetMapping("/redirect/module3")
+    public RedirectView redirectModule3() {
+        RedirectView redirectView = new RedirectView();
+        redirectView.setUrl("http://localhost:8083/module3/");
+        return redirectView;
+    }
+
+    @GetMapping("/redirect/module4")
+    public RedirectView redirectModule4() {
+        RedirectView redirectView = new RedirectView();
+        redirectView.setUrl("http://localhost:8084/module4/");
+        return redirectView;
+    }
 } 
