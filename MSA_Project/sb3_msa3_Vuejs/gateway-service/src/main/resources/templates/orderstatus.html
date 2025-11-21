@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주문 완료 현황</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding: 20px; }
+        .card { border-radius: 10px; border: none; }
+        .card-header { border-radius: 10px 10px 0 0 !important; padding: 1rem; }
+        .table th { font-weight: 600; border-bottom: 2px solid #dee2e6; }
+        .table td { vertical-align: middle; }
+        .badge { padding: 0.5em 0.8em; font-weight: 500; }
+        .pagination .page-link { color: #0d6efd; border: none; margin: 0 2px; border-radius: 5px; }
+        .pagination .page-item.active .page-link { background-color: #0d6efd; color: white; }
+        .pagination .page-item.disabled .page-link { color: #6c757d; pointer-events: none; }
+        .table-hover tbody tr:hover { background-color: rgba(13,110,253,0.05); }
+    </style>
+</head>
+<body>
+
+<div class="container mt-5">
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h2 class="mb-0">주문 완료 현황</h2>
+            <span id="userInfo" class="text-light"></span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                    <tr>
+                        <th class="text-center">ID</th>
+                        <th class="text-center">주문 ID</th>
+                        <th>제목</th>
+                        <th>내용</th>
+                        <th class="text-center">작성자</th>
+                        <th class="text-center">카테고리</th>
+                        <th class="text-center">생성일</th>
+                    </tr>
+                    </thead>
+                    <tbody id="ordersTableBody"></tbody>
+                </table>
+            </div>
+
+            <nav id="paginationNav" class="mt-4">
+                <ul class="pagination justify-content-center"></ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+    $(function() {
+
+        // ✅ JWT에서 username 가져오기
+        function getUsernameFromJWT() {
+            const token = localStorage.getItem("token");
+            if (!token) return null;
+            try {
+                const payloadBase64 = token.split('.')[1];
+                const decoded = JSON.parse(atob(payloadBase64));
+                return decoded.sub || decoded.username || decoded.name || null;
+            } catch (e) {
+                console.error("JWT 파싱 오류:", e);
+                return null;
+            }
+        }
+
+        const username = getUsernameFromJWT() || "게스트";
+        const userEmail = username !== "게스트" ? `${username}@example.com` : "guest@example.com";
+        $("#userInfo").text(`로그인: ${username} (${userEmail})`);
+
+        // ✅ Ajax 기본 설정 (JWT 자동 포함)
+        $.ajaxSetup({
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('token')
+            }
+        });
+
+        // ====== 변수 ======
+        let currentPage = 0;
+        let totalPages = 1;
+        const pageSize = 10;
+
+        // ====== 데이터 불러오기 ======
+        function fetchOrders(page = 0) {
+            $.ajax({
+                url: `/api/boards?page=${page}&size=${pageSize}`,
+                method: "GET",
+                success: function(response) {
+                    console.log("API Response:", response);
+                    renderTable(response.content);
+                    renderPagination(response.totalPages, page);
+                    totalPages = response.totalPages;
+                    currentPage = page;
+                },
+                error: function(err) {
+                    console.error("주문 현황 불러오기 실패:", err);
+                }
+            });
+        }
+
+        // ====== 테이블 렌더링 ======
+        function renderTable(data) {
+            const tbody = $("#ordersTableBody").empty();
+            if (!data || data.length === 0) {
+                tbody.append(`<tr><td colspan="7" class="text-center text-muted py-4">데이터가 없습니다.</td></tr>`);
+                return;
+            }
+
+            data.forEach(order => {
+                tbody.append(`
+        <tr>
+          <td class="text-center">${order.id}</td>
+          <td class="text-center">${order.orderId}</td>
+          <td class="fw-bold">${order.title}</td>
+          <td class="text-truncate" style="max-width: 200px;">${order.content}</td>
+          <td class="text-center">${order.author}</td>
+          <td class="text-center"><span class="badge bg-info">${order.category}</span></td>
+          <td class="text-center">${new Date(order.createdAt).toLocaleString("ko-KR")}</td>
+        </tr>
+      `);
+            });
+        }
+
+        // ====== 페이지네이션 렌더링 ======
+        function renderPagination(totalPages, currentPage) {
+            const pagination = $("#paginationNav ul").empty();
+
+            const prevDisabled = currentPage === 0 ? "disabled" : "";
+            const nextDisabled = currentPage === totalPages - 1 ? "disabled" : "";
+
+            pagination.append(`
+      <li class="page-item ${prevDisabled}">
+        <a class="page-link" href="#" data-page="${currentPage - 1}">
+          <i class="bi bi-chevron-left"></i>
+        </a>
+      </li>
+    `);
+
+            for (let i = 0; i < totalPages; i++) {
+                const active = i === currentPage ? "active" : "";
+                pagination.append(`
+        <li class="page-item ${active}">
+          <a class="page-link" href="#" data-page="${i}">${i + 1}</a>
+        </li>
+      `);
+            }
+
+            pagination.append(`
+      <li class="page-item ${nextDisabled}">
+        <a class="page-link" href="#" data-page="${currentPage + 1}">
+          <i class="bi bi-chevron-right"></i>
+        </a>
+      </li>
+    `);
+        }
+
+        // ====== 페이지 클릭 이벤트 ======
+        $("#paginationNav").on("click", "a.page-link", function(e) {
+            e.preventDefault();
+            const page = parseInt($(this).data("page"));
+            if (page >= 0 && page < totalPages) {
+                fetchOrders(page);
+            }
+        });
+
+        // ====== 초기 로드 ======
+        fetchOrders(0);
+    });
+</script>
+</body>
+</html>

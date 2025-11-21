@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주문 관리</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; background: #f8f9fa; }
+        .card { padding: 20px; border-radius: 10px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .modal-header { background-color: #f1f1f1; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>주문 관리</h2>
+        <div class="d-flex align-items-center">
+            <span id="userInfo" class="me-3 text-secondary"></span>
+            <button class="btn btn-primary" id="addOrderBtn">주문 추가</button>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover" id="ordersTable">
+            <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>상품 ID</th>
+                <th>수량</th>
+                <th>총 가격</th>
+                <th>고객명</th>
+                <th>이메일</th>
+                <th>주문일</th>
+                <th>상태</th>
+                <th>작업</th>
+            </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- 주문 추가/수정 모달 -->
+<div class="modal fade" id="orderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="orderModalTitle">주문 추가</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="orderForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">상품</label>
+                        <select class="form-select" id="productSelect" required></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">수량</label>
+                        <input type="number" class="form-control" id="quantityInput" min="1" value="1" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">총 가격</label>
+                        <input type="number" class="form-control" id="totalPriceInput" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">상태</label>
+                        <select class="form-select" id="statusSelect" required>
+                            <option value="PENDING">대기중</option>
+                            <option value="PROCESSING">처리중</option>
+                            <option value="COMPLETED">완료</option>
+                            <option value="CANCELLED">취소</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">고객명</label>
+                        <input type="text" class="form-control" id="customerNameInput" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">이메일</label>
+                        <input type="email" class="form-control" id="customerEmailInput" readonly>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="submit" class="btn btn-primary">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    $(function() {
+
+        // ✅ JWT에서 username 추출 (Spring Security의 JwtUtil.generateToken(username) 기반)
+        function getUsernameFromJWT() {
+            const token = localStorage.getItem("token");
+            if (!token) return null;
+            try {
+                const payloadBase64 = token.split('.')[1];
+                const decoded = JSON.parse(atob(payloadBase64));
+                // username은 보통 "sub" 필드에 들어있음
+                return decoded.sub || decoded.username || decoded.name || null;
+            } catch (e) {
+                console.error("JWT 파싱 오류:", e);
+                return null;
+            }
+        }
+
+        const username = getUsernameFromJWT() || "게스트";
+        const userEmail = username !== "게스트" ? `${username}@example.com` : "guest@example.com";
+
+        $("#userInfo").text(`로그인: ${username} (${userEmail})`);
+
+        // ===== 기본 변수 =====
+        let products = [];
+        let orders = [];
+        let editingOrderId = null;
+        const orderModal = new bootstrap.Modal($('#orderModal')[0]);
+
+        // ===== Ajax 기본 설정 (JWT 인증 포함) =====
+        $.ajaxSetup({
+            headers: {
+                'Authorization': 'Bearer ' + localStorage.getItem('token')
+            }
+        });
+
+        // ===== 함수들 =====
+        function formatDate(dateString) {
+            if (!dateString) return "날짜 없음";
+            try {
+                const d = new Date(dateString);
+                return d.toLocaleString("ko-KR", { hour12: true });
+            } catch {
+                return "날짜 없음";
+            }
+        }
+
+        function loadProducts() {
+            return $.ajax({
+                url: "/api/products",
+                method: "GET",
+                success: function(data) {
+                    products = data;
+                    $("#productSelect").empty().append('<option value="0">상품을 선택하세요</option>');
+                    data.forEach(p => {
+                        $("#productSelect").append(`<option value="${p.id}">${p.name} - ${p.price}원 (재고: ${p.stock})</option>`);
+                    });
+                }
+            });
+        }
+
+        function loadOrders() {
+            $.ajax({
+                url: "/api/orders",
+                method: "GET",
+                success: function(data) {
+                    orders = data;
+                    const tbody = $("#ordersTable tbody").empty();
+                    data.forEach(order => {
+                        tbody.append(`
+            <tr>
+              <td>${order.id}</td>
+              <td>${order.productId}</td>
+              <td>${order.quantity}</td>
+              <td>${order.totalPrice}</td>
+              <td>${order.customerName}</td>
+              <td>${order.customerEmail}</td>
+              <td>${formatDate(order.orderDate)}</td>
+              <td>${order.status}</td>
+              <td>
+                <button class="btn btn-sm btn-primary edit-btn" data-id="${order.id}">수정</button>
+                <button class="btn btn-sm btn-danger delete-btn" data-id="${order.id}">삭제</button>
+              </td>
+            </tr>
+          `);
+                    });
+                }
+            });
+        }
+
+        function calculateTotalPrice() {
+            const productId = parseInt($("#productSelect").val());
+            const qty = parseInt($("#quantityInput").val()) || 0;
+            const product = products.find(p => p.id === productId);
+            $("#totalPriceInput").val(product ? product.price * qty : 0);
+        }
+
+        // ====== 주문 추가 ======
+        $("#addOrderBtn").click(function() {
+            editingOrderId = null;
+            $("#orderModalTitle").text("주문 추가");
+            $("#quantityInput").val(1);
+            $("#statusSelect").val("PENDING");
+            $("#customerNameInput").val(username);
+            $("#customerEmailInput").val(userEmail);
+            $("#totalPriceInput").val(0);
+            loadProducts().then(() => orderModal.show());
+        });
+
+        // ====== 수정 ======
+        $("#ordersTable").on("click", ".edit-btn", function() {
+            const id = $(this).data("id");
+            const order = orders.find(o => o.id === id);
+            if (!order) return;
+            editingOrderId = id;
+            $("#orderModalTitle").text("주문 수정");
+            loadProducts().then(() => {
+                $("#productSelect").val(order.productId);
+                $("#quantityInput").val(order.quantity);
+                $("#statusSelect").val(order.status);
+                $("#customerNameInput").val(order.customerName);
+                $("#customerEmailInput").val(order.customerEmail);
+                $("#totalPriceInput").val(order.totalPrice);
+                orderModal.show();
+            });
+        });
+
+        // ====== 삭제 ======
+        $("#ordersTable").on("click", ".delete-btn", function() {
+            const id = $(this).data("id");
+            if (!confirm("정말 삭제하시겠습니까?")) return;
+            $.ajax({
+                url: `/api/orders/${id}`,
+                method: "DELETE",
+                success: loadOrders
+            });
+        });
+
+        // ====== 총가격 계산 ======
+        $("#productSelect, #quantityInput").on("change input", calculateTotalPrice);
+
+        // ====== 저장 ======
+        $("#orderForm").submit(function(e) {
+            e.preventDefault();
+            const data = {
+                productId: parseInt($("#productSelect").val()),
+                quantity: parseInt($("#quantityInput").val()),
+                totalPrice: parseInt($("#totalPriceInput").val()),
+                status: $("#statusSelect").val(),
+                customerName: $("#customerNameInput").val(),
+                customerEmail: $("#customerEmailInput").val(),
+                orderDate: new Date().toISOString()
+            };
+
+            if (editingOrderId) {
+                const oldOrder = orders.find(o => o.id === editingOrderId);
+                $.ajax({
+                    url: `/api/orders/${editingOrderId}`,
+                    method: "PUT",
+                    contentType: "application/json",
+                    data: JSON.stringify(data),
+                    success: function() {
+                        if (data.status === "COMPLETED" && oldOrder.status !== "COMPLETED") {
+                            const product = products.find(p => p.id === data.productId);
+                            $.ajax({
+                                url: "/api/orders/complete",
+                                method: "POST",
+                                contentType: "application/json",
+                                data: JSON.stringify({
+                                    orderId: editingOrderId,
+                                    productName: product.name,
+                                    quantity: data.quantity,
+                                    customerName: data.customerName,
+                                    orderDate: new Date().toISOString()
+                                })
+                            });
+                        }
+                        orderModal.hide();
+                        loadOrders();
+                    }
+                });
+            } else {
+                $.ajax({
+                    url: "/api/orders",
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify(data),
+                    success: function() {
+                        orderModal.hide();
+                        loadOrders();
+                    }
+                });
+            }
+        });
+
+        // ===== 초기 실행 =====
+        loadOrders();
+        loadProducts();
+    });
+</script>
+</body>
+</html>
